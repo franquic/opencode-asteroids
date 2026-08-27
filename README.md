@@ -39,8 +39,11 @@ Luego visita `http://localhost:3000`.
 | Pequeño   | 100    |
 | Estrella fugaz | 300 |
 
+Con la nave Gigante todos los puntos obtenidos se duplican.
+
 ## Características
 
+- Selección de nave en el menú (5 naves): la nave Gigante es el doble de tamaño que el resto y otorga el doble de puntos
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
