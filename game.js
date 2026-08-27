@@ -29,6 +29,69 @@ const dist  = (a, b)   => Math.hypot(a.x - b.x, a.y - b.y);
 const rand  = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.floor(rand(min, max + 1));
 
+// ── Skins ─────────────────────────────────────────────────────────────────────
+// Cada skin define su silueta (vértices en coordenadas locales de la nave),
+// el color del trazo, el de la llama y la distancia de la nariz (origen de balas).
+const SKINS = [
+  {
+    name: 'Clásica',
+    stroke: '#fff',
+    flame: 'rgba(255, 130, 0, 0.85)',
+    nose: 20,
+    verts: [[20, 0], [-12, -9], [-7, 0], [-12, 9]],
+  },
+  {
+    name: 'Dardo',
+    stroke: '#f55',
+    flame: 'rgba(255, 220, 0, 0.85)',
+    nose: 26,
+    verts: [[26, 0], [-14, -6], [-9, 0], [-14, 6]],
+  },
+  {
+    name: 'Colibrí',
+    stroke: '#5f5',
+    flame: 'rgba(160, 255, 0, 0.85)',
+    nose: 16,
+    verts: [[16, 0], [-8, -11], [-12, -4], [-5, 0], [-12, 4], [-8, 11]],
+  },
+  {
+    name: 'Titán',
+    stroke: '#fb0',
+    flame: 'rgba(255, 80, 0, 0.85)',
+    nose: 18,
+    verts: [[18, 0], [-14, -13], [-8, -5], [-11, 0], [-8, 5], [-14, 13]],
+  },
+];
+
+const SKIN_KEY = 'asteroids.skin';
+
+function loadSkin() {
+  try {
+    const i = parseInt(localStorage.getItem(SKIN_KEY), 10);
+    return Number.isInteger(i) && i >= 0 && i < SKINS.length ? i : 0;
+  } catch { return 0; }
+}
+
+function saveSkin(i) {
+  try { localStorage.setItem(SKIN_KEY, String(i)); } catch {}
+}
+
+function cycleSkin(dir) {
+  skinIndex = wrap(skinIndex + dir, SKINS.length);
+}
+
+let skinIndex = loadSkin();
+let menuAngle = 0;  // rotación de la nave en el menú
+
+// Traza el path de una silueta de nave a la escala indicada (sin stroke)
+function traceShipPath(verts, scale = 1) {
+  ctx.beginPath();
+  ctx.moveTo(verts[0][0] * scale, verts[0][1] * scale);
+  for (let i = 1; i < verts.length; i++)
+    ctx.lineTo(verts[i][0] * scale, verts[i][1] * scale);
+  ctx.closePath();
+}
+
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
   constructor(x, y, angle) {
@@ -166,7 +229,7 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
+    const NOSE = SKINS[skinIndex].nose;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     return [new Bullet(ox, oy, this.angle)];
@@ -177,20 +240,16 @@ class Ship {
     // Parpadeo durante invencibilidad de reaparición
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
+    const skin = SKINS[skinIndex];
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.strokeStyle = '#fff';
+    ctx.strokeStyle = skin.stroke;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
-    // Silueta clásica: triángulo con muesca trasera
-    ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
-    ctx.closePath();
+    // Silueta según el skin activo
+    traceShipPath(skin.verts, 1);
     ctx.stroke();
 
     // Llama del propulsor
@@ -199,7 +258,7 @@ class Ship {
       ctx.moveTo(-8, -4);
       ctx.lineTo(-8 - rand(6, 14), 0);
       ctx.lineTo(-8,  4);
-      ctx.strokeStyle = 'rgba(255, 130, 0, 0.85)';
+      ctx.strokeStyle = skin.flame;
       ctx.stroke();
     }
 
@@ -350,7 +409,7 @@ class ShootingStar {
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles, powerup, star;
 let score, lives, level;
-let state;      // 'playing' | 'dead' | 'gameover'
+let state;      // 'menu' | 'playing' | 'dead' | 'gameover'
 let deadTimer;
 let powerupTimer;
 let starTimer;
@@ -488,8 +547,20 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  if (state === 'menu') {
+    menuAngle += dt * 0.8;
+    if (pressed('ArrowLeft'))  cycleSkin(-1);
+    if (pressed('ArrowRight')) cycleSkin(1);
+    if (pressed('Space')) {
+      saveSkin(skinIndex);
+      initGame();
+    }
+    return;
+  }
+
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
+    if (pressed('Escape')) state = 'menu';
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
     return;
@@ -554,18 +625,14 @@ function update(dt) {
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawLifeIcon(x, y) {
+  const skin = SKINS[skinIndex];
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = skin.stroke;
   ctx.lineWidth   = 1.2;
   ctx.lineJoin    = 'round';
-  ctx.beginPath();
-  ctx.moveTo( 9,  0);
-  ctx.lineTo(-6, -5);
-  ctx.lineTo(-3,  0);
-  ctx.lineTo(-6,  5);
-  ctx.closePath();
+  traceShipPath(skin.verts, 0.45);
   ctx.stroke();
   ctx.restore();
 }
@@ -600,9 +667,43 @@ function drawOverlay(title, sub) {
   ctx.fillText(sub, W / 2, H / 2 + 22);
 }
 
+function drawMenu() {
+  const skin = SKINS[skinIndex];
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 52px monospace';
+  ctx.fillText('ASTEROIDS', W / 2, 150);
+
+  ctx.font = '20px monospace';
+  ctx.fillStyle = skin.stroke;
+  ctx.fillText(skin.name.toUpperCase(), W / 2, 240);
+
+  // Previsualización de la nave, rotando lentamente
+  ctx.save();
+  ctx.translate(W / 2, H / 2 + 20);
+  ctx.rotate(menuAngle);
+  ctx.strokeStyle = skin.stroke;
+  ctx.lineWidth   = 2;
+  ctx.lineJoin    = 'round';
+  traceShipPath(skin.verts, 3);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.font = '17px monospace';
+  ctx.fillText('◀ ▶ CAMBIAR NAVE — ESPACIO PARA JUGAR', W / 2, H - 60);
+  ctx.fillText(`NAVE ${skinIndex + 1}/${SKINS.length}`, W / 2, H - 36);
+}
+
 function draw() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
+
+  if (state === 'menu') {
+    drawMenu();
+    return;
+  }
 
   particles.forEach(p => p.draw());
   asteroids.forEach(a => a.draw());
@@ -614,7 +715,7 @@ function draw() {
   drawHUD();
 
   if (state === 'gameover')
-    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR`);
+    drawOverlay('GAME OVER', `PUNTAJE: ${score} — ESPACIO REINICIAR — ESC MENÚ`);
 }
 
 // ── Loop principal ────────────────────────────────────────────────────────────
@@ -629,4 +730,5 @@ function loop(ts) {
 }
 
 initGame();
+state = 'menu';  // se empieza en el menú de selección de nave
 requestAnimationFrame(loop);
