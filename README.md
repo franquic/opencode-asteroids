@@ -37,9 +37,11 @@ Luego visita `http://localhost:3000`.
 | Grande    | 20     |
 | Mediano   | 50     |
 | Pequeño   | 100    |
+| Estrella fugaz | 300 |
 
 ## Características
 
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
+- Estrella fugaz: aparece periódicamente, se mueve mucho más rápido que los asteroides, desaparece a los pocos segundos y otorga 300 puntos si logras destruirla; si te golpea, pierdes una vida
