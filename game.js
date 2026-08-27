@@ -32,6 +32,8 @@ const randInt = (min, max) => Math.floor(rand(min, max + 1));
 // ── Skins ─────────────────────────────────────────────────────────────────────
 // Cada skin define su silueta (vértices en coordenadas locales de la nave),
 // el color del trazo, el de la llama y la distancia de la nariz (origen de balas).
+// Opcionalmente puede escalar su tamaño (scale) y multiplicar los puntos
+// obtenidos mientras se pilota (scoreMult).
 const SKINS = [
   {
     name: 'Clásica',
@@ -60,6 +62,15 @@ const SKINS = [
     flame: 'rgba(255, 80, 0, 0.85)',
     nose: 18,
     verts: [[18, 0], [-14, -13], [-8, -5], [-11, 0], [-8, 5], [-14, 13]],
+  },
+  {
+    name: 'Gigante',
+    stroke: '#a5f',
+    flame: 'rgba(255, 100, 255, 0.85)',
+    nose: 20,
+    scale: 2,
+    scoreMult: 2,
+    verts: [[20, 0], [6, -9], [-8, -10], [-13, -4], [-8, 0], [-13, 4], [-8, 10], [6, 9]],
   },
 ];
 
@@ -191,7 +202,7 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
+    this.radius = 12 * (SKINS[skinIndex].scale || 1);
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
@@ -206,6 +217,7 @@ class Ship {
 
   get velocityActive() { return this.velocityTtl > 0; }
   get tripleActive()   { return this.tripleTtl   > 0; }
+  get shieldRadius()   { return SHIELD_RADIUS * (this.radius / 12); }
 
   update(dt) {
     if (this.dead) return;
@@ -253,7 +265,7 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = SKINS[skinIndex].nose;
+    const NOSE = SKINS[skinIndex].nose * (SKINS[skinIndex].scale || 1);
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     // Triple: tres balas en abanico (~20°)
@@ -274,6 +286,7 @@ class Ship {
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
     const skin = SKINS[skinIndex];
+    const scale = skin.scale || 1;
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
@@ -282,15 +295,15 @@ class Ship {
     ctx.lineJoin    = 'round';
 
     // Silueta según el skin activo
-    traceShipPath(skin.verts, 1);
+    traceShipPath(skin.verts, scale);
     ctx.stroke();
 
     // Llama del propulsor
     if (this.thrusting && Math.random() > 0.35) {
       ctx.beginPath();
-      ctx.moveTo(-8, -4);
-      ctx.lineTo(-8 - rand(6, 14), 0);
-      ctx.lineTo(-8,  4);
+      ctx.moveTo(-8 * scale, -4 * scale);
+      ctx.lineTo(-8 * scale - rand(6, 14) * scale, 0);
+      ctx.lineTo(-8 * scale, 4 * scale);
       ctx.strokeStyle = skin.flame;
       ctx.stroke();
     }
@@ -307,7 +320,7 @@ class Ship {
       ctx.strokeStyle = SHIELD_COLOR;
       ctx.lineWidth   = 2;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, SHIELD_RADIUS * pulse, 0, Math.PI * 2);
+      ctx.arc(this.x, this.y, this.shieldRadius * pulse, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -531,6 +544,11 @@ function explode(x, y, count = 8, color = '#fff') {
     particles.push(new Particle(x, y, { color }));
 }
 
+// Suma puntos aplicando el multiplicador de la nave activa (la Gigante puntúa doble)
+function addScore(base) {
+  score += base * (SKINS[skinIndex].scoreMult || 1);
+}
+
 function updatePowerUp(dt) {
   // Aparición periódica (solo un pickup a la vez en pantalla)
   powerupTimer -= dt;
@@ -585,7 +603,7 @@ function updateStar(dt) {
   for (const b of bullets) {
     if (!b.dead && dist(b, star) < star.radius) {
       b.dead = true;
-      score += STAR_POINTS;
+      addScore(STAR_POINTS);
       explode(star.x, star.y, 12, STAR_COLOR);
       star = null;
       return;
@@ -597,7 +615,7 @@ function updateStar(dt) {
 
   // Nave vs estrella fugaz: el escudo la destruye sin puntos
   const dStar = dist(ship, star);
-  if (ship.shieldActive && dStar < SHIELD_RADIUS + star.radius) {
+  if (ship.shieldActive && dStar < ship.shieldRadius + star.radius) {
     explode(star.x, star.y, 12, SHIELD_COLOR);
     star = null;
   } else if (ship.invincible <= 0 && dStar < ship.radius + star.radius) {
@@ -675,7 +693,7 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
+        addScore(POINTS[a.size]);
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
       }
@@ -688,7 +706,7 @@ function update(dt) {
   for (const a of asteroids) {
     if (a.dead) continue;
     const d = dist(ship, a);
-    if (ship.shieldActive && d < SHIELD_RADIUS + a.radius * 0.82) {
+    if (ship.shieldActive && d < ship.shieldRadius + a.radius * 0.82) {
       a.dead = true;
       explode(a.x, a.y, a.size * 5, SHIELD_COLOR);
     } else if (ship.invincible <= 0 && d < ship.radius + a.radius * 0.82) {
@@ -720,7 +738,13 @@ function drawHUD() {
   ctx.font = '15px monospace';
 
   ctx.textAlign = 'left';
-  ctx.fillText(`SCORE  ${score}`, 14, 26);
+  const scoreText = `SCORE  ${score}`;
+  ctx.fillText(scoreText, 14, 26);
+  if ((SKINS[skinIndex].scoreMult || 1) > 1) {
+    ctx.fillStyle = SKINS[skinIndex].stroke;
+    ctx.fillText('x2', 20 + ctx.measureText(scoreText).width, 26);
+    ctx.fillStyle = '#fff';
+  }
 
   ctx.textAlign = 'center';
   ctx.fillText(`NIVEL ${level}`, W / 2, 26);
@@ -773,18 +797,25 @@ function drawMenu() {
 
   ctx.font = '20px monospace';
   ctx.fillStyle = skin.stroke;
-  ctx.fillText(skin.name.toUpperCase(), W / 2, 240);
+  ctx.fillText(skin.name.toUpperCase(), W / 2, 195);
 
-  // Previsualización de la nave, rotando lentamente
+  // Previsualización de la nave, rotando lentamente (a escala real del skin)
   ctx.save();
   ctx.translate(W / 2, H / 2 + 20);
   ctx.rotate(menuAngle);
   ctx.strokeStyle = skin.stroke;
   ctx.lineWidth   = 2;
   ctx.lineJoin    = 'round';
-  traceShipPath(skin.verts, 3);
+  traceShipPath(skin.verts, 3 * (skin.scale || 1));
   ctx.stroke();
   ctx.restore();
+
+  // Ventaja de la nave Gigante
+  if ((skin.scoreMult || 1) > 1) {
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '15px monospace';
+    ctx.fillText('DOBLE TAMAÑO — PUNTOS x2', W / 2, 470);
+  }
 
   ctx.fillStyle = 'rgba(255,255,255,0.65)';
   ctx.font = '17px monospace';
