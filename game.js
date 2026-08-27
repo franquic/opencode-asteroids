@@ -133,6 +133,10 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.velocityTtl   = 0;  // tiempo restante del power-up Velocity
+    this.shieldEnergy  = SHIELD_MAX;
+    this.shieldLocked  = false;  // bloqueado hasta recuperar energía tras agotarse
+    this.shieldActive  = false;
+    this.shieldT       = 0;  // reloj para la animación de pulso
     this.dead          = false;
   }
 
@@ -143,6 +147,23 @@ class Ship {
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.velocityTtl   > 0) this.velocityTtl   -= dt;
+
+    // Escudo: mantener Shift lo activa mientras haya energía
+    const shieldKey = keys['ShiftLeft'] || keys['ShiftRight'];
+    if (this.shieldLocked && this.shieldEnergy >= SHIELD_MIN_ACTIVATE)
+      this.shieldLocked = false;
+    this.shieldActive = shieldKey && !this.shieldLocked && this.shieldEnergy > 0;
+    if (this.shieldActive) {
+      this.shieldEnergy -= SHIELD_DRAIN * dt;
+      if (this.shieldEnergy <= 0) {
+        this.shieldEnergy = 0;
+        this.shieldLocked = true;
+        this.shieldActive = false;
+      }
+    } else {
+      this.shieldEnergy = Math.min(SHIELD_MAX, this.shieldEnergy + SHIELD_REGEN * dt);
+    }
+    this.shieldT += dt;
 
     const ROT    = 3.5;   // rad/s
     const THRUST = 260 * (this.velocityActive ? 2 : 1);  // px/s²
@@ -204,6 +225,21 @@ class Ship {
     }
 
     ctx.restore();
+
+    // Anillo del escudo
+    if (this.shieldActive) {
+      const low = this.shieldEnergy < SHIELD_MAX * 0.25;
+      const pulse = 1 + Math.sin(this.shieldT * 10) * 0.06;
+      ctx.save();
+      // Parpadeo cuando queda poca energía
+      ctx.globalAlpha = low && Math.floor(this.shieldT * 8) % 2 === 0 ? 0.35 : 0.9;
+      ctx.strokeStyle = SHIELD_COLOR;
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, SHIELD_RADIUS * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -240,6 +276,14 @@ class Particle {
     ctx.globalAlpha = 1;
   }
 }
+
+// ── Escudo ────────────────────────────────────────────────────────────────────
+const SHIELD_MAX          = 3;     // segundos de energía total
+const SHIELD_DRAIN        = 1.5;   // energía consumida por segundo activo
+const SHIELD_REGEN        = 0.25;  // energía regenerada por segundo inactivo
+const SHIELD_MIN_ACTIVATE = 1;     // energía mínima para reactivar tras agotarse
+const SHIELD_RADIUS       = 26;    // radio del anillo
+const SHIELD_COLOR        = '#0af';
 
 // ── Power-up: Velocity ────────────────────────────────────────────────────────
 const VELOCITY_DURATION = 5;   // segundos de efecto
@@ -466,8 +510,12 @@ function updateStar(dt) {
   // Expiración natural
   if (star.dead) { star = null; return; }
 
-  // Nave vs estrella fugaz
-  if (ship.invincible <= 0 && dist(ship, star) < ship.radius + star.radius) {
+  // Nave vs estrella fugaz: el escudo la destruye sin puntos
+  const dStar = dist(ship, star);
+  if (ship.shieldActive && dStar < SHIELD_RADIUS + star.radius) {
+    explode(star.x, star.y, 12, SHIELD_COLOR);
+    star = null;
+  } else if (ship.invincible <= 0 && dStar < ship.radius + star.radius) {
     star = null;
     killShip();
   }
@@ -538,13 +586,16 @@ function update(dt) {
   asteroids = asteroids.filter(a => !a.dead).concat(newAsteroids);
   bullets   = bullets.filter(b => !b.dead);
 
-  // Nave vs asteroide
-  if (ship.invincible <= 0) {
-    for (const a of asteroids) {
-      if (dist(ship, a) < ship.radius + a.radius * 0.82) {
-        killShip();
-        break;
-      }
+  // Asteroide vs nave: el escudo lo destruye (sin puntos ni división)
+  for (const a of asteroids) {
+    if (a.dead) continue;
+    const d = dist(ship, a);
+    if (ship.shieldActive && d < SHIELD_RADIUS + a.radius * 0.82) {
+      a.dead = true;
+      explode(a.x, a.y, a.size * 5, SHIELD_COLOR);
+    } else if (ship.invincible <= 0 && d < ship.radius + a.radius * 0.82) {
+      killShip();
+      break;
     }
   }
 
@@ -587,6 +638,18 @@ function drawHUD() {
 
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
+
+  // Barra de energía del escudo
+  const bw = 120, bh = 8;
+  const bx = W / 2 - bw / 2, by = H - 22;
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle = ship.shieldEnergy > 0 ? SHIELD_COLOR : 'rgba(255,255,255,0.25)';
+  ctx.fillRect(bx + 1, by + 1, (bw - 2) * (ship.shieldEnergy / SHIELD_MAX), bh - 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font      = '11px monospace';
+  ctx.fillText('ESCUDO', W / 2, by - 5);
 
 }
 
